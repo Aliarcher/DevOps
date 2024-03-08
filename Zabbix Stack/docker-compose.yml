@@ -1,0 +1,156 @@
+version: '3.7'
+
+networks:
+ zabbix:
+  #  driver: host
+  driver: bridge
+#  zabbix-external:
+#    external: true
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:14.5
+    restart: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PG_DATA: /var/lib/postgresql/data/pgdata
+    networks:
+      - zabbix  
+
+  zabbix-server:
+    container_name: zabbix-server
+    image: zabbix/zabbix-server-pgsql:ubuntu-6.4-latest
+    restart: always
+    ports:
+      - "10051:10051"
+    volumes:
+      - ./config:/etc/zabbix
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro 
+      - ./zabbix-server/alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - ./zabbix-server/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - ./zabbix-server/dbscripts:/var/lib/zabbix/dbscripts:ro
+      - ./zabbix-server/export:/var/lib/zabbix/export:rw
+      - ./zabbix-server/modules:/var/lib/zabbix/modules:ro
+      - ./zabbix-server/enc:/var/lib/zabbix/enc:ro
+      - ./zabbix-server/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - ./zabbix-server/mibs:/var/lib/zabbix/mibs:ro
+      - ./zabbix-server/snmptraps:/var/lib/zabbix/snmptraps:ro
+      #  - ./env_vars/.ZBX_DB_CA_FILE:/run/secrets/root-ca.pem:ro
+      #  - ./env_vars/.ZBX_DB_CERT_FILE:/run/secrets/client-cert.pem:ro
+      #  - ./env_vars/.ZBX_DB_KEY_FILE:/run/secrets/client-key.pem:ro
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    depends_on:
+      - postgres
+    networks:
+      - zabbix   
+ #     - zabbix-external
+
+  zabbix-web:
+    container_name: zabbix-web
+    image: zabbix/zabbix-web-nginx-pgsql:6.4-ubuntu-latest
+    restart: always
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      DB_SERVER_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PHP_TZ: ${TZ}
+      ZBX_SERVER_HOST: zabbix-server
+    depends_on:
+      - zabbix-server
+    networks:
+      - zabbix   
+  #    - zabbix-external
+
+  zabbix-agent:
+    container_name: zabbix-agent
+    image: zabbix/zabbix-agent:6.4-ubuntu-latest
+    user: root
+    restart: always
+    privileged: true
+    volumes:
+      - ./zabbix-agent/var/run:/var/run
+    ports:
+      - "10050:10050"
+    environment:
+      #ZBX_HOSTNAME: zabbix-server
+      #ZBX_SERVER_HOST: zabbix-server
+      - ZBX_HOSTNAME=zabbix-server
+      - ZBX_SERVER_HOST=zabbix-server
+    depends_on:
+      - zabbix-server
+    networks:
+      - zabbix
+   #   - zabbix-external
+
+  zabbix-snmptraps:
+    image: zabbix/zabbix-snmptraps
+    container_name: zabbix-snmptraps
+    links:
+      - postgres
+    restart: always
+    environment:
+      ZBX_SNMP_TRAP_DATE_FORMAT: '+%Y-%m-%dT%T%z'
+      ZBX_SNMP_TRAP_FORMAT: '\n'
+      ZBX_SNMP_TRAP_USE_DNS: 10.10.225.231 #It can be IP address or DNS of SNMP trap sender.
+    depends_on:
+      - zabbix-server  
+    ports:
+      - 162:1162 
+    networks:
+      - zabbix         
+
+  #grafana:
+    #container_name: grafana
+    #image: grafana/grafana:9.1.4-ubuntu
+    #user: "472"
+    #volumes:
+      #- ./grafana-data:/var/lib/grafana
+      #- ./grafana-provisioning:/etc/grafana/provisioning # Mount provisioning files
+      #- ./grafana_plugins:/var/lib/grafana/plugins    
+    #restart: always
+    #ports:
+     #- "3000:3000"
+    #environment:
+      #- GF_SECURITY_ADMIN_PASSWORD=admin
+      #- GF_DATABASE_MAX_OPEN_CONN=300
+      #- GF_ENABLE_GZIP=true
+      #- GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app 
+    #depends_on:
+      #- zabbix-server
+
+  grafana-xxl:  #optional more functional and creative UI 
+   image: monitoringartist/grafana-xxl:latest
+   container_name: grafana-xxl
+    #user: "472"
+   volumes:
+      - ./grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning # Mount provisioning files
+     #- ./grafana_plugins:/var/lib/grafana/plugins
+   restart: always
+   ports:
+     - "3000:3000"
+   environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DATABASE_MAX_OPEN_CONN=300
+      - GF_ENABLE_GZIP=true
+      ##- GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app
+   depends_on:
+      - zabbix-server
+   networks:
+      - zabbix
