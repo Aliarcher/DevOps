@@ -107,7 +107,7 @@ services:
     environment:
       ZBX_SNMP_TRAP_DATE_FORMAT: '+%Y-%m-%dT%T%z'
       ZBX_SNMP_TRAP_FORMAT: '\n'
-      ZBX_SNMP_TRAP_USE_DNS: 10.10.225.231 #It can be IP address or DNS of SNMP trap sender.
+     # ZBX_SNMP_TRAP_USE_DNS: 10.10.225.231 #It can be IP address or DNS of SNMP trap sender.
     depends_on:
       - zabbix-server  
     ports:
